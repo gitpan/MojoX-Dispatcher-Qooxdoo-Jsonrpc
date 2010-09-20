@@ -50,7 +50,7 @@ sub handle_request {
     $package = $data->{service};
     
     if (not exists $services->{$package}){
-        $reply = $json->encode({error => {origin => 1, message => "Service $package not available", code=> '9838'}, id => $id});
+        $reply = $json->encode({error => {origin => 1, message => "Service $package not available", code=> '3'}, id => $id});
         _send_reply($reply, $id, $cross_domain, $self) and return;
     }
     
@@ -58,13 +58,13 @@ sub handle_request {
     $method = $data->{method};
     
     if ($method =~ /^_/){
-        $reply = $json->encode({error => {origin => 1, message => "private method ${package}::$method not accessible", code=> '9838'}, id => $id});
+        $reply = $json->encode({error => {origin => 1, message => "private method ${package}::$method not accessible", code=> '2'}, id => $id});
         _send_reply($reply, $id, $cross_domain, $self) and return;
     }
     
-    # Check if method is 
+    # Check if method only consists of letters and underscore (not leading!)
     if ($method !~ /^[a-zA-Z_]+$/){
-        $reply = $json->encode({error => {origin => 1, message => "methods should only contain a-z, A-Z and _, $method is forbidden", code=> '9838'}, id => $id});
+        $reply = $json->encode({error => {origin => 1, message => "methods should only contain a-z, A-Z and _, $method is forbidden", code=> '1'}, id => $id});
         _send_reply($reply, $id, $cross_domain, $self) and return;
     }
     
@@ -77,20 +77,21 @@ sub handle_request {
         no strict 'refs';
         $reply = $services->{$package}->$method(@params);
     };
-    if ($@){  
-        # error is an object 
-        #   which must contain 'code' (qooxdoo error code) and 'message'
-        if (ref $@){ 
-            # qooxdoo expects a json
-            $reply = $json->encode({error => {origin => 1, message => $@->message(), code=>$@->code()}, id => $id});
-        }
-        
-        # error is a string 
-        else{
-            $reply = $json->encode({error => {origin => 1, message => "error while processing ${package}::$method: $@", code=> '9838'}, id => $id});
+    
+    
+    if ($@){ 
+        for (ref $@){
+            /HASH/ && do {
+                $reply = $json->encode({error => {origin => 2, message => $@->{message}, code=>$@->{code}}, id => $id});
+                last;
+            };
+            /.+/ && do {
+                $reply = $json->encode({error => {origin => 2, message => $@->message(), code=>$@->code()}, id => $id});
+                last;
+            };
+            $reply = $json->encode({error => {origin => 2, message => "error while processing ${package}::$method: $@", code=> '9999'}, id => $id});
         }
     }
-    
     # no error occurred
     else{
         $reply = $json->encode({id => $id, result => $reply});
@@ -112,9 +113,9 @@ sub _send_reply{
     $self->render(text => $reply);
 }
 
-1
+1;
 
-__END__
+
 
 =head1 NAME
 
@@ -159,16 +160,155 @@ L<MojoX::Dispatcher::Qooxdoo::Jsonrpc> dispatches incoming
 rpc requests from a qooxdoo application to your services and renders
 a (hopefully) valid json reply.
 
-=head1 METHODS
 
-L<MojoX::Dispatcher::Qooxdoo::Jsonrpc> implements the following new ones.
+=head1 EXAMPLE 
 
-=head2 C<handle_request>
+This example exposes a service named "Test" in a folder "qooxdoo-services".
+The Mojo application is named "qooxdooserver".
+First create this application using "mojolicious generate app qooxdooserver".
 
+Then, lets write the service:
+
+Change to the root directory "qooxdooserver" of your fresh Mojo-Application and make a 
+dir named 'qooxdoo-services' for the services you want to expose.
+
+Our "Test"-service could look like:
+
+ package Test;
+
+ sub new{
+    my $class = shift;
     
+    my $object = {
+        
+    };
+    bless $object, $class;
+    return $object;
+ }
 
-=head1 SEE ALSO
+ sub add{
+    my $self = shift;
+    my @params = @_;
+    
+    # Debug message on Mojo-server console (or log)
+    print "Debug: $params[0] + $params[1]\n";
+    
+    # uncomment if you want to die without further handling
+    # die;
+    
+    # uncomment if you want to die with a message in a hash
+    # die {code => 20, message => "Test died on purpose :-)"};
+    
+    
+    # uncomment if you want to die with your homemade error object 
+    # (simple example see below)
+    # better use your elaborate error handling instead!
+    
+    # require Error;
+    # my $error = new Error();
+    # die $error;
+    
+    my $result =  $params[0] + $params[1]
+    return $result;
+    
+ }
 
-L<Mojolicious>, L<Mojolicious::Guides>, L<http://mojolicious.org>.
+ 1;
+ 
+ 
+ # Example of simple and stupid Error class:
+ 
+ package Error;
+
+ sub new{
+    my $class = shift;
+    
+    my $error = {};
+    
+    bless $error, $class;
+    return $error;
+ }
+
+ sub message{
+    return "stupid error message";
+ }
+
+ sub code{
+    return "934857"; # no real error code here
+ }
+
+1;
+
+Please create a constructor (like "new" here) which instantiates an object because we are going to use this in
+our 'lib/qooxdooserver.pm' below.
+
+Notice the exception handling: You can die without or with a message (see example above). 
+MojoX::Dispatcher::Qooxdoo::Jsonrpc will catch the "die" like an exception an send a message to the client.
+Happy dying! :-)
+
+
+Now, lets write our application.
+Almost everything should have been prepared by Mojo when you invoked 
+"mojolicious generate app qooxdooserver" (see above).
+
+Change to "lib/" and open "qooxdooserver.pm" in your favourite editor.
+Then add some lines to make it look like this:
+
+ package qooxdooserver;
+
+ # perhaps this is wise for a server..
+ use strict;
+ use warnings;
+
+ use base 'Mojolicious';
+
+ # This method will run once at server start
+ sub startup {
+    my $self = shift;
+    
+    # use your services' directory
+    use lib ('qooxdoo-services');
+    
+    # use our Test service
+    use Test;
+    
+    # instantiate objects
+    my $services= {
+        Test => new Test(),
+        
+        # add more constructors of services here..
+    };
+    
+    # tell Mojo about your services:
+   
+    my $r = $self->routes;
+    
+    # this sends all requests for "/qooxdoo" in your Mojo server to our little dispatcher
+    # change this at your own taste.
+    $r->route('/qooxdoo')->to('
+        jsonrpc#handle_request', 
+        services => $services, 
+        namespace => 'MojoX::Dispatcher::Qooxdoo'
+    );
+ }
+
+ 1;
+
+
+=head1 AUTHOR
+
+Matthias Bloch, <lt>matthias at puffin ch<gt>
+This Module is sponsored by OETIKER+PARTNER AG
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2010 by :m)
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.8 or,
+at your option, any later version of Perl 5 you may have available.
+
+
+
 
 =cut
