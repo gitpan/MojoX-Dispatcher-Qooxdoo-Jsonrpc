@@ -6,14 +6,14 @@ use warnings;
 use Mojo::JSON;
 use base 'Mojolicious::Controller';
 
-our $VERSION = '0.51';
+our $VERSION = '0.53';
 
 sub handle_request {
     my $self = shift;
     
     my ($package, $method, @params, $id, $cross_domain, $data, $reply, $error);
     
-    my $debug = 1;
+    my $debug = $self->stash('debug');
 
     # instantiate a JSON encoder - decoder object.
     my $json = Mojo::JSON->new;
@@ -31,15 +31,19 @@ sub handle_request {
     
     # cross-domain GET requests
     elsif ($self->req->method eq 'GET'){
-        $data           = $json->decode($self->param('_ScriptTransport_data'));
+        $data           = $json->decode(
+                                $self->param('_ScriptTransport_data')
+                            );
         $id             = $self->param('_ScriptTransport_id');
         $cross_domain   = 1;
     }
     else{
         print "wrong request method: ".$self->req->method."\n" if $debug;
         
-        # I don't know any method to send a reply to qooxdoo if it doesn't send POST or GET
-        # return will simply generate a "Transport error 0: Unknown status code" in qooxdoo
+        # I don't know any method to send a reply to qooxdoo if it doesn't 
+        # send POST or GET 
+        # return will simply generate a 
+        # "Transport error 0: Unknown status code" in qooxdoo
         return;
     }
     
@@ -50,22 +54,46 @@ sub handle_request {
     $package = $data->{service};
     
     if (not exists $services->{$package}){
-        $reply = $json->encode({error => {origin => 1, message => "Service $package not available", code=> '3'}, id => $id});
-        _send_reply($reply, $id, $cross_domain, $self) and return;
+        $reply = $json->
+            encode({
+                error => {
+                    origin => 1, 
+                    message => "Service $package not available", 
+                    code=> '3'
+                }, id => $id
+            });
+        _send_reply($reply, $id, $cross_domain, $self);
+        return;
     }
     
     # Check if method is not private (marked with a leading underscore)
     $method = $data->{method};
     
     if ($method =~ /^_/){
-        $reply = $json->encode({error => {origin => 1, message => "private method ${package}::$method not accessible", code=> '2'}, id => $id});
-        _send_reply($reply, $id, $cross_domain, $self) and return;
+        $reply = $json->
+            encode({
+                error => {
+                    origin => 1, 
+                    message => "private method ${package}::$method not accessible", 
+                    code=> '2'
+                }, id => $id
+            });
+        _send_reply($reply, $id, $cross_domain, $self);
+        return;
     }
     
     # Check if method only consists of letters and underscore (not leading!)
     if ($method !~ /^[a-zA-Z_]+$/){
-        $reply = $json->encode({error => {origin => 1, message => "methods should only contain a-z, A-Z and _, $method is forbidden", code=> '1'}, id => $id});
-        _send_reply($reply, $id, $cross_domain, $self) and return;
+        $reply = $json->
+            encode({
+                error => {
+                    origin => 1, 
+                    message => "methods should only contain a-z, A-Z and _, $method is forbidden", 
+                    code=> '1'
+                }, id => $id
+            });
+        _send_reply($reply, $id, $cross_domain, $self);
+        return;
     }
     
     
@@ -82,14 +110,34 @@ sub handle_request {
     if ($@){ 
         for (ref $@){
             /HASH/ && do {
-                $reply = $json->encode({error => {origin => 2, message => $@->{message}, code=>$@->{code}}, id => $id});
+                $reply = $json->
+                    encode({
+                        error => {
+                            origin => 2, 
+                            message => $@->{message}, 
+                            code=>$@->{code}
+                        }, id => $id
+                    });
                 last;
             };
             /.+/ && do {
-                $reply = $json->encode({error => {origin => 2, message => $@->message(), code=>$@->code()}, id => $id});
+                $reply = $json->
+                    encode({
+                        error => {
+                            origin => 2, 
+                            message => $@->message(), 
+                            code=>$@->code()
+                        }, id => $id
+                    });
                 last;
             };
-            $reply = $json->encode({error => {origin => 2, message => "error while processing ${package}::$method: $@", code=> '9999'}, id => $id});
+            $reply = $json->encode({
+                error => {
+                    origin => 2, 
+                    message => "error while processing ${package}::$method: $@", 
+                    code=> '9999'
+                }, id => $id
+            });
         }
     }
     # no error occurred
@@ -107,7 +155,8 @@ sub _send_reply{
         # for GET requests, qooxdoo expects us to send a javascript method
         # and to wrap our json a litte bit more
         $self->res->headers->content_type('application/javascript');
-        $reply = "qx.io.remote.transport.Script._requestFinished( $id, " . $reply . ");";
+        $reply = 
+            "qx.io.remote.transport.Script._requestFinished( $id, " . $reply . ");";
     }
     
     $self->render(text => $reply);
@@ -124,19 +173,15 @@ MojoX::Dispatcher::Qooxdoo::Jsonrpc - Dispatcher for Qooxdoo Json Rpc Calls
 =head1 SYNOPSIS
 
  # lib/your-application.pm
+ 
+ use RpcService::Test;
+ 
  sub startup {
     my $self = shift;
-
-    # choose your directory for services:
-    use lib ('qooxdoo-services'); 
-    
-    # use all services you want to use
-    # (and omit everything you don't want to expose)
-    use Test;
     
     # instantiate all services
     my $services= {
-        Test => new Test(),
+        Test => new RpcService::Test(),
         
     };
     
@@ -146,8 +191,9 @@ MojoX::Dispatcher::Qooxdoo::Jsonrpc - Dispatcher for Qooxdoo Json Rpc Calls
     $r->route('/qooxdoo') ->
             to('
                 Jsonrpc#handle_request', 
-                services => $services, 
-                namespace => 'MojoX::Dispatcher::Qooxdoo'
+                services    => $services, 
+                debug       => 0,
+                namespace   => 'MojoX::Dispatcher::Qooxdoo'
             );
         
  }
@@ -163,18 +209,21 @@ a (hopefully) valid json reply.
 
 =head1 EXAMPLE 
 
-This example exposes a service named "Test" in a folder "qooxdoo-services".
-The Mojo application is named "qooxdooserver".
-First create this application using "mojolicious generate app qooxdooserver".
+This example exposes a service named "Test" in a folder "RpcService".
+The Mojo application is named "qooxdooserver". The scripts are in
+the 'example' directory.
+First create this application using 
+"mojolicious generate app qooxdooserver".
 
 Then, lets write the service:
 
-Change to the root directory "qooxdooserver" of your fresh Mojo-Application and make a 
-dir named 'qooxdoo-services' for the services you want to expose.
+Change to the root directory "qooxdooserver" of your fresh 
+Mojo-Application and make a dir named 'qooxdoo-services' 
+for the services you want to expose.
 
 Our "Test"-service could look like:
 
- package Test;
+ package RpcService::Test;
 
  sub new{
     my $class = shift;
@@ -204,8 +253,8 @@ Our "Test"-service could look like:
     # (simple example see below)
     # better use your elaborate error handling instead!
     
-    # require Error;
-    # my $error = new Error();
+    # use Error;
+    # my $error = new Error('stupid error message', '56457');
     # die $error;
     
     my $result =  $params[0] + $params[1]
@@ -223,27 +272,35 @@ Our "Test"-service could look like:
  sub new{
     my $class = shift;
     
-    my $error = {};
+    my $error = {
+        message => shift;
+        code    => shift;
+    };
     
     bless $error, $class;
     return $error;
  }
 
  sub message{
-    return "stupid error message";
+    my $self = shift;
+    return $self->{message};
  }
 
  sub code{
-    return "934857"; # no real error code here
+    my $self = shift;
+    return $self->{code};
  }
 
 1;
 
-Please create a constructor (like "new" here) which instantiates an object because we are going to use this in
+Please create a constructor (like "new" here) which instantiates
+an object because we are going to use this in
 our 'lib/qooxdooserver.pm' below.
 
-Notice the exception handling: You can die without or with a message (see example above). 
-MojoX::Dispatcher::Qooxdoo::Jsonrpc will catch the "die" like an exception an send a message to the client.
+Notice the exception handling: You can die without or with a message 
+(see example above). 
+MojoX::Dispatcher::Qooxdoo::Jsonrpc will catch the "die" like an 
+exception an send a message to the client.
 Happy dying! :-)
 
 
@@ -256,9 +313,10 @@ Then add some lines to make it look like this:
 
  package qooxdooserver;
 
- # perhaps this is wise for a server..
  use strict;
  use warnings;
+ 
+ use RpcService::Test;
 
  use base 'Mojolicious';
 
@@ -266,33 +324,40 @@ Then add some lines to make it look like this:
  sub startup {
     my $self = shift;
     
-    # use your services' directory
-    use lib ('qooxdoo-services');
-    
-    # use our Test service
-    use Test;
-    
-    # instantiate objects
     my $services= {
-        Test => new Test(),
-        
-        # add more constructors of services here..
+        Test => new RpcService::Test(),
+        # more services here
     };
     
     # tell Mojo about your services:
-   
     my $r = $self->routes;
     
-    # this sends all requests for "/qooxdoo" in your Mojo server to our little dispatcher
+    # this sends all requests for "/qooxdoo" in your Mojo server 
+    # to our little dispatcher.
     # change this at your own taste.
     $r->route('/qooxdoo')->to('
         jsonrpc#handle_request', 
-        services => $services, 
-        namespace => 'MojoX::Dispatcher::Qooxdoo'
+        services    => $services, 
+        debug       => 0,
+        namespace   => 'MojoX::Dispatcher::Qooxdoo'
     );
+    
  }
 
  1;
+
+Now start your Mojo Server by issuing 'script/qooxdooserver daemon'. 
+If you want to change any options, type 'script/qooxdooserver help'. 
+
+=head2 Security
+MojoX::Dispatcher::Qooxdoo::Jsonrpc only allows methods matching
+this pattern: /^[a-zA-Z_]+$/
+This means you are allowed to use letters and the underscore.
+Be aware that methods starting with an underscore are private by
+convention and not exposed.
+
+Only services explicitly loaded in lib/your-application.pm
+will be accessible.
 
 
 =head1 AUTHOR
