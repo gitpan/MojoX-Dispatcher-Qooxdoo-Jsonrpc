@@ -6,7 +6,7 @@ use warnings;
 use Mojo::JSON;
 use base 'Mojolicious::Controller';
 
-our $VERSION = '0.53';
+our $VERSION = '0.55';
 
 sub dispatch {
     my $self = shift;
