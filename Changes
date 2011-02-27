@@ -1,5 +1,14 @@
 Revision history for Perl extension MojoX-Dispatcher-Qooxdoo-Jsonrpc:
 
+0.67	Sun Feb 27 2011
+        - bring Makefile.PL in line with latest trends
+        - add testing
+        - some catch more errors in jsonrpc
+        - set application/json header on response
+        - report rpc errors to the mojo log
+        - do not localize __WARN__ in eval as this makes no sense here
+        - simplified code a bit more
+
 0.66    Thu Feb 22 2011 
 	*** INCOMPATIBLE CHANGES ***
 

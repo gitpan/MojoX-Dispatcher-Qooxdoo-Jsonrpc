@@ -6,13 +6,11 @@ use warnings;
 use Mojo::JSON;
 use base 'Mojolicious::Controller';
 
-our $VERSION = '0.56';
+our $VERSION = '0.67';
 
 sub dispatch {
     my $self = shift;
-    
-    my ($id, $cross_domain, $data, $reply, $error);
-    
+       
     my $debug = $self->stash('debug');
 
     # instantiate a JSON encoder - decoder object.
@@ -21,65 +19,76 @@ sub dispatch {
     # We have to differentiate between POST and GET requests, because
     # the data is not sent in the same place..
     
-    # non cross domain POST calls. 
-    if ($self->req->method eq 'POST'){
-        # Data comes as JSON object, so fetch a reference to it
-        $data           = $json->decode($self->req->body);
-        $id             = $data->{id};
-        $cross_domain   = 0;
-    }
-    
-    # cross-domain GET requests
-    elsif ($self->req->method eq 'GET'){
-        $data= $json->decode(
-            $self->param('_ScriptTransport_data')
-        );
-        $id = $self->param('_ScriptTransport_id') ;
-        $cross_domain   = 1;
-    }
-    else{
-        print "wrong request method: ".$self->req->method."\n" if $debug;
-        
-        # I don't know any method to send a reply to qooxdoo if it doesn't 
-        # send POST or GET 
-        # return will simply generate a 
-        # "Transport error 0: Unknown status code" in qooxdoo
+    my $id;    
+    my $data;
+    my $cross_domain;
+    for ( $self->req->method ){
+        /^POST$/ && do {
+            # Data comes as JSON object, so fetch a reference to it
+            $data           = $json->decode($self->req->body);
+            $id             = $data->{id};
+            $cross_domain   = 0;
+            next;
+        };
+        /^GET$/ && do {
+            $data= $json->decode(
+                $self->param('_ScriptTransport_data')
+            );
+            $id = $self->param('_ScriptTransport_id') ;
+            $cross_domain   = 1;
+            next;
+        };
+        my $error = "request must be POST or GET. Can't handle '".$self->req->method."'";
+        $self->app->log->error($error);
+        $self->render(text => $error, status=>500);
         return;
-    }
-        
+    }        
+
     if (not defined $id){
-        $self->app->log->fatal("This is not a JsonRPC request.");
+        my $error = "This is not a JsonRPC request.";
+        $self->app->log->error($error);
+        $self->render(text => $error, status=>500);
         return;
     }
 
-    # Getting available services from stash
-    my $services = $self->stash('services');
 
     # Check if desired service is available
-    my $package = $data->{service};
+    my $service = $data->{service} or do {
+        my $error = "Missing service property in JsonRPC request.";
+        $self->app->log->error($error);
+        $self->render(text => $error, status=>500);
+        return;
+    };
 
     # Check if method is not private (marked with a leading underscore)
-    my $method = $data->{method};
+    my $method = $data->{method} or do {
+        my $error = "Missing method property in JsonRPC request.";
+        $self->app->log->error($error);
+        $self->render(text => $error, status=>500);
+        return;
+    };
     
-    my @params  = @{$data->{params}}; # is a reference, so "unpack" it
-        
+    my $params  = $data->{params} || []; # is a reference, so "unpack" it
+
+    $self->res->headers->content_type('application/json');
+    
     # invocation of method in class according to request 
-    eval{
+    my $reply = eval{
         # make sure there are not foreign signal handlers
         # messing with our problems
         local $SIG{__DIE__};
-        local $SIG{__WARN__};
-        my $svc = $services->{$package};
+        # Getting available services from stash
+        my $svc = $self->stash('services')->{$service};
 
         die {
             origin => 1,
-            message => "service $package not available",
+            message => "service $service not available",
             code=> 3
         } if not ref $svc;
 
         die {
              origin => 1, 
-             message => "your rpc service object must provide an allow_rpc_access method", 
+             message => "your rpc service object (".ref($svc).") must provide an allow_rpc_access method", 
              code=> 2
         } unless $svc->can('allow_rpc_access');
 
@@ -108,60 +117,48 @@ sub dispatch {
         } if not $svc->can($method);
 
         no strict 'refs';
-        $reply = $svc->$method(@params);
+        # reply
+        $svc->$method(@$params);
     };
        
     if ($@){ 
+        my $error;
         for (ref $@){
-            /HASH/ && do {
-                $reply = $json->
-                    encode({
-                        error => {
-                            origin => $@->{origin} || 2, 
-                            message => $@->{message}, 
-                            code=>$@->{code}
-                        }, id => $id
-                    });
+            /HASH/ && $@->{message} && do {
+                $error = {
+                     origin => $@->{origin} || 2, 
+                     message => $@->{message}, 
+                     code=>$@->{code}
+                };
                 last;
             };
             /.+/ && $@->can('message') && $@->can('code') && do {
-                $reply = $json->
-                    encode({
-                        error => {
-                            origin => 2, 
-                            message => $@->message(), 
-                            code=>$@->code()
-                        }, id => $id
-                    });
+                $error = {
+                      origin => 2, 
+                      message => $@->message(), 
+                      code=>$@->code()
+                };
                 last;
             };
-            $reply = $json->encode({
-                error => {
-                    origin => 2, 
-                    message => "error while processing ${package}::$method: $@", 
-                    code=> '9999'
-                }, id => $id
-            });
+            $error = {
+                origin => 2, 
+                message => "error while processing ${service}::$method: $@", 
+                code=> '9999'
+            };
         }
+        $reply = $json->encode({ id => $id, error => $error });
+        $self->app->log->error("JsonRPC Error $error->{code}: $error->{message}");
     }
-    # no error occurred
-    else{
-        $reply = $json->encode({id => $id, result => $reply});
-    }    
-    _send_reply($reply, $id, $cross_domain, $self);
-}
+    else {
+        $reply = $json->encode({ id => $id, result => $reply });
+    }
 
-sub _send_reply{
-    my ($reply, $id, $cross_domain, $self) = @_;
-    
     if ($cross_domain){
         # for GET requests, qooxdoo expects us to send a javascript method
         # and to wrap our json a litte bit more
         $self->res->headers->content_type('application/javascript');
-        $reply = 
-            "qx.io.remote.transport.Script._requestFinished( $id, " . $reply . ");";
-    }
-    
+        $reply = "qx.io.remote.transport.Script._requestFinished( $id, " . $reply . ");";
+    }    
     $self->render(text => $reply);
 }
 
@@ -336,7 +333,7 @@ Then add some lines to make it look like this:
  
  use RpcService::Test;
 
- use base 'Mojolicious';
+ use Mojo::Base 'Mojolicious';
 
  # This method will run once at server start
  sub startup {
