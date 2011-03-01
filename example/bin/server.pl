@@ -28,9 +28,9 @@ use FindBin;
 use lib "$FindBin::Bin/../lib";
 use lib "$FindBin::Bin/../../lib";
 use Mojolicious::Commands;
-use MojoApp;
+use QxExample::MojoApp;
 
-$ENV{MOJO_APP} = MojoApp->new;
+$ENV{MOJO_APP} = QxExample::MojoApp->new;
 
 # Start commands
 Mojolicious::Commands->start;

@@ -2,9 +2,14 @@ package MojoApp;
 use strict;
 use warnings;
 
-use JsonRpcService;
+use QxExample::JsonRpcService;
 
 use Mojo::Base 'Mojolicious';
+
+# the dispatcher module gets autoloaded, we list it here to
+# make sure it is available and compiles at startup time and not
+# only on demand.
+use MojoX::Dispatcher::Qooxdoo::Jsonrpc;
 
 sub startup {
     my $self = shift;
@@ -12,7 +17,7 @@ sub startup {
     my $r = $self->routes;
 
     my $services = {
-        rpc => new JsonRpcService(),
+        rpc => QxExample::JsonRpcService->new(),
     };
             
     $SIG{__WARN__} = sub {
