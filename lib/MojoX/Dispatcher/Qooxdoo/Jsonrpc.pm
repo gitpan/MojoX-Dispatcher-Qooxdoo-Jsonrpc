@@ -4,21 +4,28 @@ use strict;
 use warnings;
 
 use Mojo::JSON;
-use base 'Mojolicious::Controller';
+use Mojo::Base 'Mojolicious::Controller';
+use Encode;
 
-our $VERSION = '0.70';
+our $toUTF8 = find_encoding('utf8');
+
+our $VERSION = '0.72';
 
 sub dispatch {
     my $self = shift;
        
-    my $debug = $self->stash('debug');
-
     # instantiate a JSON encoder - decoder object.
     my $json = Mojo::JSON->new;
     
     # We have to differentiate between POST and GET requests, because
     # the data is not sent in the same place..
-    
+    my $log = $self->app->log;
+
+    # send warnings to log file ... 
+    local $SIG{__WARN__} = sub {
+        $log->info(shift);
+    };
+
     my $id;    
     my $data;
     my $cross_domain;
@@ -39,14 +46,14 @@ sub dispatch {
             next;
         };
         my $error = "request must be POST or GET. Can't handle '".$self->req->method."'";
-        $self->app->log->error($error);
+        $log->error($error);
         $self->render(text => $error, status=>500);
         return;
     }        
 
     if (not defined $id){
         my $error = "This is not a JsonRPC request.";
-        $self->app->log->error($error);
+        $log->error($error);
         $self->render(text => $error, status=>500);
         return;
     }
@@ -55,7 +62,7 @@ sub dispatch {
     # Check if desired service is available
     my $service = $data->{service} or do {
         my $error = "Missing service property in JsonRPC request.";
-        $self->app->log->error($error);
+        $log->error($error);
         $self->render(text => $error, status=>500);
         return;
     };
@@ -63,15 +70,13 @@ sub dispatch {
     # Check if method is not private (marked with a leading underscore)
     my $method = $data->{method} or do {
         my $error = "Missing method property in JsonRPC request.";
-        $self->app->log->error($error);
+        $log->error($error);
         $self->render(text => $error, status=>500);
         return;
     };
     
     my $params  = $data->{params} || []; # is a reference, so "unpack" it
-
-    $self->res->headers->content_type('application/json');
-    
+ 
     # invocation of method in class according to request 
     my $reply = eval{
         # make sure there are not foreign signal handlers
@@ -116,8 +121,9 @@ sub dispatch {
              code=> 4
         } if not $svc->can($method);
 
-        no strict 'refs';
+        $log->debug("call $method(".$json->encode($params).")");
         # reply
+        no strict 'refs';
         $svc->$method(@$params);
     };
        
@@ -147,19 +153,24 @@ sub dispatch {
             };
         }
         $reply = $json->encode({ id => $id, error => $error });
-        $self->app->log->error("JsonRPC Error $error->{code}: $error->{message}");
+        $log->error("JsonRPC Error $error->{code}: $error->{message}");
     }
     else {
         $reply = $json->encode({ id => $id, result => $reply });
+        $log->debug("return ".$reply);
     }
 
     if ($cross_domain){
         # for GET requests, qooxdoo expects us to send a javascript method
         # and to wrap our json a litte bit more
-        $self->res->headers->content_type('application/javascript');
+        $self->res->headers->content_type('application/javascript; charset=utf-8');
         $reply = "qx.io.remote.transport.Script._requestFinished( $id, " . $reply . ");";
+    } else {
+        $self->res->headers->content_type('application/json; charset=utf-8');
     }    
-    $self->render(text => $reply);
+    # the render takes care of encoding the output, so make sure we re-decode
+    # the json stuf
+    $self->render(text => $toUTF8->decode($reply));
 }
 
 1;
