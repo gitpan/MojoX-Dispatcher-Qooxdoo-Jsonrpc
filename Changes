@@ -1,6 +1,8 @@
 Revision history for Perl extension MojoX-Dispatcher-Qooxdoo-Jsonrpc:
 
-0.73    - added pointer to Mojolicious::Plugin::QooxdooJsonrpc in
+0.74    - added better __WARN__ handler as suggested by Sebastian Riedel
+        - fixed package name in example
+        - added pointer to Mojolicious::Plugin::QooxdooJsonrpc in
           MojoX::Dispatcher::Qooxdoo::Jsonrpc documentation
         
 0.72    Sat Mar 26 2011

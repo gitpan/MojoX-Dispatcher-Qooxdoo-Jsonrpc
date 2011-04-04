@@ -9,23 +9,26 @@ use Encode;
 
 our $toUTF8 = find_encoding('utf8');
 
-our $VERSION = '0.73';
+our $VERSION = '0.74';
+
+has 'JSON' => sub { Mojo::JSON->new };
 
 sub dispatch {
     my $self = shift;
-       
-    # instantiate a JSON encoder - decoder object.
-    my $json = Mojo::JSON->new;
     
     # We have to differentiate between POST and GET requests, because
     # the data is not sent in the same place..
     my $log = $self->app->log;
 
-    # send warnings to log file ... 
-    local $SIG{__WARN__} = sub {
-        $log->info(shift);
-    };
+    my $json = $self->JSON;
 
+    # send warnings to log file preserving the origin
+    local $SIG{__WARN__} = sub {
+        my  $message = shift;
+        $message =~ s/\n$//;
+        @_ = ($log, $message);
+        goto &Mojo::Log::warn;
+    };
     my $id;    
     my $data;
     my $cross_domain;
