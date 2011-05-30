@@ -1,5 +1,14 @@
 Revision history for Perl extension MojoX-Dispatcher-Qooxdoo-Jsonrpc:
 
+0.76    - require mojo 0.34 to make sure we don't run into
+          trouble with old versions.
+
+        - ship index.html without redirecting to it ... 
+          this makes for nicer urls
+
+        - simplify plugin code a little by using get method when
+          setting up routes
+
 0.75    - make plugin in development mode creative in finding
           the qooxdoo source code and contrib downloads
 
