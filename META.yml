@@ -1,0 +1,22 @@
+---
+abstract: 'dispatch Qooxdoo applications with Mojo'
+author:
+  - 'Matthias Bloch <matthias at puffin ch>'
+build_requires:
+  Test::More: 0
+configure_requires:
+  ExtUtils::MakeMaker: 6.31
+dynamic_config: 1
+generated_by: 'ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.112150'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: MojoX-Dispatcher-Qooxdoo-Jsonrpc
+no_index:
+  directory:
+    - t
+    - inc
+requires:
+  Mojolicious: 1.47
+version: 0.84
