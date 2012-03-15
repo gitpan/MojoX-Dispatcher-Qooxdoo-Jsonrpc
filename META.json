@@ -32,10 +32,10 @@
       },
       "runtime" : {
          "requires" : {
-            "Mojolicious" : "1.47"
+            "Mojolicious" : "2.49"
          }
       }
    },
    "release_status" : "stable",
-   "version" : "0.84"
+   "version" : "0.85"
 }
