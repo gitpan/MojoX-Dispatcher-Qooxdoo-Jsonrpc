@@ -1,7 +1,9 @@
 Revision history for Perl extension MojoX-Dispatcher-Qooxdoo-Jsonrpc:
- 
-0.89    fix test; perl 5.17.6 randomizes hashes
 
+0.90    fix tests and example to track changes in mojolicious
+
+0.89    fix test; perl 5.17.6 randomizes hashes
+ 
 0.88    add make source mode work even when prefix in /  
  
 0.87    make sure we do not ship from 'public' in QX_SRC_MODE
