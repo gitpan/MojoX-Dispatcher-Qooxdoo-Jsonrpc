@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               MojoX-Dispatcher-Qooxdoo-Jsonrpc
-version:            0.93
+version:            0.94
 abstract:           dispatch Qooxdoo applications with Mojo
 author:
     - Matthias Bloch <matthias at puffin ch>
